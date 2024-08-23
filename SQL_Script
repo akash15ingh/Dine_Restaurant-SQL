@@ -1,0 +1,141 @@
+Danny wants to use the data to answer a few  questions about his customers, especially about their visiting patterns, how much money they’ve spent and also which menu items are their favourite. Having this deeper connection with his customers will help him deliver a better and more personalised experience for his loyal customers.
+
+He plans on using these insights to help him decide whether he should expand the existing customer loyalty program - additionally he needs help to generate some basic datasets so his team can easily inspect the data without needing to use SQL.
+
+Danny has provided you with a sample of his overall customer data due to privacy issues - but he hopes that these examples are enough for you to write fully functioning SQL queries to help him answer his questions!
+
+
+-- What is the total amount each customer spent at the restaurant?
+select customer_id
+,sum(price) Amount_spent
+from sales 
+JOIN menu 
+USING(product_id) 
+group by 1;
+
+-- How many days has each customer visited the restaurant?
+select customer_id
+,count(order_date) Days_Visisted
+from sales 
+group by 1;
+
+-- What was the first item from the menu purchased by each customer?
+with rankedOrders as 
+(select customer_id,
+order_date,product_name
+,Dense_rank() over(partition by customer_id order by order_date) as row_num 
+from sales JOIN menu 
+USING(product_id) order by row_num) 
+select customer_id
+,product_name
+,count(order_date) as first_ordered
+from rankedorders 
+where row_num=1 group  by 1,2;
+
+
+-- What is the most purchased item on the menu and how many times was it purchased by all customers?
+
+with mostOrder as 
+(select product_name
+,count(*) order_count
+from sales Join
+Menu Using(product_id) group by product_name)
+select product_name,order_count
+from mostorder where order_count=(select max(order_count) from mostorder);
+
+
+-- Which item was the most popular for each customer
+with popular_item as 
+(select product_name
+,count(*) productOrder
+,customer_id from menu join sales 
+using(product_id) 
+group by customer_id,product_name)
+select product_name
+,productOrder,
+customer_id from popular_item 
+where 
+productOrder=(select max(productOrder) from popular_item) group by customer_id,productOrder,product_name;
+
+-- Which item was purchased first by the customer after they became a member?
+with First_ordered as 
+(select customer_id
+,order_date
+,product_name
+,dense_rank() over(partition by customer_id order by order_date) orderRank
+from members JOIN 
+sales USING(customer_id) 
+JOIN menu USING(product_id) 
+where order_date>= join_date)
+select product_name
+,customer_id 
+from first_ordered 
+where orderRank=1;
+
+
+
+
+
+-- Which item was purchased just before the customer became a member?
+with First_ordered as 
+(select customer_id
+,order_date
+,product_name
+,dense_rank() over(partition by customer_id order by order_date) orderRank
+from members JOIN 
+sales USING(customer_id) 
+JOIN menu USING(product_id) 
+where order_date <= join_date)
+select product_name
+,customer_id 
+from first_ordered 
+where orderRank=1;
+
+
+
+
+-- What is the total items and amount spent for each member before they became a member?
+select count(product_name) as Items
+,sum(price) as Amount 
+,customer_id from menu 
+JOIN sales  USING(product_id) 
+JOIN members USING(customer_id) 
+where order_date < join_date  group by customer_id;
+
+
+
+-- If each $1 spent equates to 10 points and sushi has a 2x points multiplier - how many points would each customer have?
+select customer_id, 
+sum(case 
+when product_name='sushi' then price*20
+else price*10
+end) as points from sales join menu using(product_id) group by customer_id;
+
+
+-- In the first week after a customer joins the program (including their join date) they earn 2x points on all items, 
+-- not just sushi - how many points do customer A and B have at the end of January?
+select customer_id,
+sum(case 
+when order_date between join_date AND 
+date_add(join_date,interval 7 day) then price*20
+else price*1 end) 
+as points
+from members join sales using(customer_id) 
+join menu using(product_id) 
+where join_date <= '2021-01-31' and order_date <= '2021-01-31' 
+group by customer_id order by customer_id;
+
+
+-- Sort the table in the following order were if the customers purchases orders before joining the membership.
+with ranked as 
+(select customer_id,order_date,product_name,price,
+case 
+when order_date <= join_date then "Y"
+else "N"
+end as mems,
+case 
+when order_date <= join_date then rank() over(partition by customer_id order by order_date)
+else "Null"
+end as ranking
+from members join sales using(customer_id) join menu using(product_id))
+select * from ranked;
